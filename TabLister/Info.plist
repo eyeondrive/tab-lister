@@ -5,6 +5,6 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Tab Lister needs access to Safari to list and switch between your open tabs.</string>
+	<string>Tab Lister needs access to Safari and Preview to list and switch between your open tabs and PDFs.</string>
 </dict>
 </plist>

@@ -1,43 +1,96 @@
 import SwiftUI
 
+enum ListSource: String, CaseIterable {
+    case safari = "Safari"
+    case preview = "PDFs"
+}
+
+/// A flattened row for display, regardless of source.
+private struct DisplayRow: Identifiable {
+    let id: UUID
+    let title: String
+    let subtitle: String
+    let activate: () -> Void
+}
+
 struct TabListView: View {
-    @StateObject private var fetcher = SafariTabFetcher()
+    @StateObject private var safariFetcher = SafariTabFetcher()
+    @StateObject private var previewFetcher = PreviewDocFetcher()
+    @State private var source: ListSource = .safari
     @State private var searchText = ""
 
-    var filteredTabs: [SafariTab] {
-        if searchText.isEmpty {
-            return fetcher.tabs
+    private var rows: [DisplayRow] {
+        switch source {
+        case .safari:
+            return safariFetcher.tabs.map { tab in
+                DisplayRow(id: tab.id, title: tab.title, subtitle: tab.url) {
+                    safariFetcher.activateTab(tab)
+                }
+            }
+        case .preview:
+            return previewFetcher.docs.map { doc in
+                DisplayRow(id: doc.id, title: doc.name, subtitle: doc.path) {
+                    previewFetcher.activateDoc(doc)
+                }
+            }
         }
-        return fetcher.tabs.filter {
+    }
+
+    private var filteredRows: [DisplayRow] {
+        if searchText.isEmpty { return rows }
+        return rows.filter {
             $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.url.localizedCaseInsensitiveContains(searchText)
+            $0.subtitle.localizedCaseInsensitiveContains(searchText)
         }
+    }
+
+    private var searchPrompt: String {
+        source == .safari ? "Search tabs..." : "Search PDFs..."
+    }
+
+    private var emptyTitle: String {
+        if !searchText.isEmpty { return "No Results" }
+        return source == .safari ? "No Tabs" : "No PDFs"
+    }
+
+    private var emptyIcon: String {
+        if !searchText.isEmpty { return "magnifyingglass" }
+        return source == .safari ? "safari" : "doc.richtext"
+    }
+
+    private var emptyDescription: String {
+        if !searchText.isEmpty { return "Nothing matching \"\(searchText)\"" }
+        return source == .safari ? "Open some tabs in Safari" : "Open some PDFs in Preview"
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            TextField("Search tabs...", text: $searchText)
+            Picker("Source", selection: $source) {
+                ForEach(ListSource.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
+            TextField(searchPrompt, text: $searchText)
                 .textFieldStyle(.roundedBorder)
                 .padding(8)
 
-            if filteredTabs.isEmpty {
+            if filteredRows.isEmpty {
                 ContentUnavailableView(
-                    searchText.isEmpty ? "No Tabs" : "No Results",
-                    systemImage: searchText.isEmpty ? "safari" : "magnifyingglass",
-                    description: Text(
-                        searchText.isEmpty
-                            ? "Open some tabs in Safari"
-                            : "No tabs matching \"\(searchText)\""
-                    )
+                    emptyTitle,
+                    systemImage: emptyIcon,
+                    description: Text(emptyDescription)
                 )
                 .frame(maxHeight: .infinity)
             } else {
-                List(filteredTabs) { tab in
-                    Button(action: { fetcher.activateTab(tab) }) {
+                List(filteredRows) { row in
+                    Button(action: row.activate) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(tab.title)
+                            Text(row.title)
                                 .lineLimit(1)
-                            Text(tab.url)
+                            Text(row.subtitle)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -49,6 +102,14 @@ struct TabListView: View {
             }
         }
         .frame(width: 400, height: 500)
-        .onAppear { fetcher.fetchTabs() }
+        .onAppear { refresh() }
+        .onChange(of: source) { _, _ in refresh() }
+    }
+
+    private func refresh() {
+        switch source {
+        case .safari: safariFetcher.fetchTabs()
+        case .preview: previewFetcher.fetchDocs()
+        }
     }
 }
